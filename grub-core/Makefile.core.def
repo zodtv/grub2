@@ -789,6 +789,14 @@ module = {
 };
 
 module = {
+  name = efisecret;
+
+  common = disk/efi/efisecret.c;
+
+  enable = efi;
+};
+
+module = {
   name = lsefimmap;
 
   common = commands/efi/lsefimmap.c;

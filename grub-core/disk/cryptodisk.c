@@ -41,6 +41,7 @@ static const struct grub_arg_option options[] =
     /* TRANSLATORS: It's still restricted to cryptodisks only.  */
     {"all", 'a', 0, N_("Mount all."), 0, 0},
     {"boot", 'b', 0, N_("Mount all volumes with `boot' flag set."), 0, 0},
+    {"secret", 's', 0, N_("Get secret passphrase from named module and optional identifier"), 0, 0},
     {0, 0, 0, 0, 0, 0}
   };
 
@@ -985,6 +986,10 @@ grub_util_cryptodisk_get_uuid (grub_disk_t disk)
 
 static int check_boot, have_it;
 static char *search_uuid;
+static char *os_passwd;
+
+/* variable to hold the list of secret providers */
+static struct grub_secret_entry *secret_providers;
 
 static void
 cryptodisk_close (grub_cryptodisk_t dev)
@@ -993,6 +998,21 @@ cryptodisk_close (grub_cryptodisk_t dev)
   grub_crypto_cipher_close (dev->secondary_cipher);
   grub_crypto_cipher_close (dev->essiv_cipher);
   grub_free (dev);
+}
+
+static int
+os_password_get(char buf[], unsigned len)
+{
+  if (!buf)
+    /* we're not interactive so no prompt */
+    return 0;
+
+  /* os_passwd should be null terminated, so just copy everything */
+  grub_strncpy(buf, os_passwd, len);
+  /* and add a terminator just in case */
+  buf[len - 1] = 0;
+
+  return 1;
 }
 
 static grub_err_t
@@ -1014,8 +1034,17 @@ grub_cryptodisk_scan_device_real (const char *name, grub_disk_t source)
       return grub_errno;
     if (!dev)
       continue;
-    
-    err = cr->recover_key (source, dev);
+
+    if (os_passwd)
+      {
+       err = cr->recover_key (source, dev, os_password_get);
+       if (err)
+         /* if the key doesn't work ignore the access denied error */
+         grub_error_pop();
+      }
+    else
+      err = cr->recover_key (source, dev, grub_password_get);
+
     if (err)
     {
       cryptodisk_close (dev);
@@ -1029,6 +1058,18 @@ grub_cryptodisk_scan_device_real (const char *name, grub_disk_t source)
     return GRUB_ERR_NONE;
   }
   return GRUB_ERR_NONE;
+}
+
+void
+grub_cryptodisk_add_secret_provider (struct grub_secret_entry *e)
+{
+  grub_list_push(GRUB_AS_LIST_P (&secret_providers), GRUB_AS_LIST (e));
+}
+
+void
+grub_cryptodisk_remove_secret_provider  (struct grub_secret_entry *e)
+{
+  grub_list_remove (GRUB_AS_LIST (e));
 }
 
 #ifdef GRUB_UTIL
@@ -1107,7 +1148,7 @@ grub_cmd_cryptomount (grub_extcmd_context_t ctxt, int argc, char **args)
 {
   struct grub_arg_list *state = ctxt->state;
 
-  if (argc < 1 && !state[1].set && !state[2].set)
+  if (argc < 1 && !state[1].set && !state[2].set && !state[3].set)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, "device name required");
 
   have_it = 0;
@@ -1125,6 +1166,7 @@ grub_cmd_cryptomount (grub_extcmd_context_t ctxt, int argc, char **args)
 
       check_boot = state[2].set;
       search_uuid = args[0];
+      os_passwd = NULL;
       grub_device_iterate (&grub_cryptodisk_scan_device, NULL);
       search_uuid = NULL;
 
@@ -1135,10 +1177,36 @@ grub_cmd_cryptomount (grub_extcmd_context_t ctxt, int argc, char **args)
   else if (state[1].set || (argc == 0 && state[2].set))
     {
       search_uuid = NULL;
+      os_passwd = NULL;
       check_boot = state[2].set;
       grub_device_iterate (&grub_cryptodisk_scan_device, NULL);
       search_uuid = NULL;
       return GRUB_ERR_NONE;
+    }
+  else if (state[3].set)
+    {
+      struct grub_secret_entry *se;
+      grub_err_t rc;
+
+      if (argc < 1)
+       return grub_error (GRUB_ERR_BAD_ARGUMENT, "secret module must be specified");
+#ifndef GRUB_UTIL
+      grub_dl_load (args[0]);
+#endif
+      se = grub_named_list_find (GRUB_AS_NAMED_LIST (secret_providers), args[0]);
+      if (se == NULL)
+       return grub_error (GRUB_ERR_INVALID_COMMAND, "No secret provider is found");
+
+      rc = se->get (args[1], &os_passwd);
+      if (rc)
+       return rc;
+
+      search_uuid = NULL;
+      grub_device_iterate (&grub_cryptodisk_scan_device, NULL);
+      rc = se->put (args[1], have_it, &os_passwd);
+      os_passwd = NULL;
+
+      return rc;
     }
   else
     {
@@ -1150,6 +1218,7 @@ grub_cmd_cryptomount (grub_extcmd_context_t ctxt, int argc, char **args)
       grub_size_t len;
 
       search_uuid = NULL;
+      os_passwd = NULL;
       check_boot = state[2].set;
       diskname = args[0];
       len = grub_strlen (diskname);
@@ -1317,7 +1386,7 @@ GRUB_MOD_INIT (cryptodisk)
 {
   grub_disk_dev_register (&grub_cryptodisk_dev);
   cmd = grub_register_extcmd ("cryptomount", grub_cmd_cryptomount, 0,
-			      N_("SOURCE|-u UUID|-a|-b"),
+			      N_("SOURCE|-u UUID|-a|-b|-s MOD [ID]"),
 			      N_("Mount a crypto device."), options);
   grub_procfs_register ("luks_script", &luks_script);
 }

@@ -542,7 +542,8 @@ luks2_decrypt_key (grub_uint8_t *out_key,
 
 static grub_err_t
 luks2_recover_key (grub_disk_t source,
-		   grub_cryptodisk_t crypt)
+		   grub_cryptodisk_t crypt,
+                   grub_passwd_cb *password_get)
 {
   grub_uint8_t candidate_key[GRUB_CRYPTODISK_MAX_KEYLEN];
   char passphrase[MAX_PASSPHRASE], cipher[32];
@@ -584,10 +585,11 @@ luks2_recover_key (grub_disk_t source,
   /* Get the passphrase from the user. */
   if (source->partition)
     part = grub_partition_get_name (source->partition);
-  grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
-		source->partition ? "," : "", part ? : "",
-		crypt->uuid);
-  if (!grub_password_get (passphrase, MAX_PASSPHRASE))
+  if (password_get (NULL, 0))
+    grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
+                 source->partition ? "," : "", part ? : "",
+                 crypt->uuid);
+  if (!password_get (passphrase, MAX_PASSPHRASE))
     {
       ret = grub_error (GRUB_ERR_BAD_ARGUMENT, "Passphrase not supplied");
       goto err;

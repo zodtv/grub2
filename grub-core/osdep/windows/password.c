@@ -29,12 +29,16 @@
 int
 grub_password_get (char buf[], unsigned buf_size)
 {
-  HANDLE hStdin = GetStdHandle (STD_INPUT_HANDLE); 
+  HANDLE hStdin = GetStdHandle (STD_INPUT_HANDLE);
   DWORD mode = 0;
   char *ptr;
 
+  if (!buf)
+    /* want prompt */
+    return 1;
+
   grub_refresh ();
-  
+
   GetConsoleMode (hStdin, &mode);
   SetConsoleMode (hStdin, mode & (~ENABLE_ECHO_INPUT));
 

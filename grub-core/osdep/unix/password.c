@@ -34,6 +34,10 @@ grub_password_get (char buf[], unsigned buf_size)
   int tty_changed = 0;
   char *ptr;
 
+  if (!buf)
+    /* want prompt */
+    return 1;
+
   grub_refresh ();
 
   /* Disable echoing. Based on glibc.  */

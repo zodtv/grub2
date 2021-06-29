@@ -152,7 +152,8 @@ configure_ciphers (grub_disk_t disk, const char *check_uuid,
 
 static grub_err_t
 luks_recover_key (grub_disk_t source,
-		  grub_cryptodisk_t dev)
+		  grub_cryptodisk_t dev,
+                  grub_passwd_cb *password_get)
 {
   struct grub_luks_phdr header;
   grub_size_t keysize;
@@ -187,11 +188,12 @@ luks_recover_key (grub_disk_t source,
   tmp = NULL;
   if (source->partition)
     tmp = grub_partition_get_name (source->partition);
-  grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
-	       source->partition ? "," : "", tmp ? : "",
-	       dev->uuid);
+  if (password_get (NULL, 0))
+         grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
+                       source->partition ? "," : "", tmp ? : "",
+                       dev->uuid);
   grub_free (tmp);
-  if (!grub_password_get (passphrase, MAX_PASSPHRASE))
+  if (!password_get (passphrase, MAX_PASSPHRASE))
     {
       grub_free (split_key);
       return grub_error (GRUB_ERR_BAD_ARGUMENT, "Passphrase not supplied");

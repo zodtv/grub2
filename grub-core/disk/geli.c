@@ -398,7 +398,7 @@ configure_ciphers (grub_disk_t disk, const char *check_uuid,
 }
 
 static grub_err_t
-recover_key (grub_disk_t source, grub_cryptodisk_t dev)
+recover_key (grub_disk_t source, grub_cryptodisk_t dev, grub_passwd_cb *password_get)
 {
   grub_size_t keysize;
   grub_uint8_t digest[GRUB_CRYPTO_MAX_MDLEN];
@@ -438,11 +438,12 @@ recover_key (grub_disk_t source, grub_cryptodisk_t dev)
   tmp = NULL;
   if (source->partition)
     tmp = grub_partition_get_name (source->partition);
-  grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
-		source->partition ? "," : "", tmp ? : "",
-		dev->uuid);
+  if (password_get (NULL, 0))
+    grub_printf_ (N_("Enter passphrase for %s%s%s (%s): "), source->name,
+                 source->partition ? "," : "", tmp ? : "",
+                 dev->uuid);
   grub_free (tmp);
-  if (!grub_password_get (passphrase, MAX_PASSPHRASE))
+  if (!password_get (passphrase, MAX_PASSPHRASE))
     return grub_error (GRUB_ERR_BAD_ARGUMENT, "Passphrase not supplied");
 
   /* Calculate the PBKDF2 of the user supplied passphrase.  */
